@@ -97,6 +97,27 @@ APELIDOS = {
     "cr vasco da gama": "Vasco",
     "ec vitoria": "Vitória",
     "vitoria": "Vitória",
+    # --- Nomes oficiais como vêm da API football-data.org (v4) ---
+    "botafogo fr": "Botafogo",
+    "ca mineiro": "Atlético-MG",
+    "ca paranaense": "Athletico-PR",
+    "cr flamengo": "Flamengo",
+    "cr vasco da gama": "Vasco",
+    "chapecoense af": "Chapecoense",
+    "clube do remo": "Remo",
+    "coritiba fbc": "Coritiba",
+    "cruzeiro ec": "Cruzeiro",
+    "ec bahia": "Bahia",
+    "ec vitoria ": "Vitória",
+    "fluminense fc": "Fluminense",
+    "gremio fbpa": "Grêmio",
+    "mirassol fc": "Mirassol",
+    "rb bragantino": "Bragantino",
+    "sc corinthians paulista": "Corinthians",
+    "sc internacional": "Internacional",
+    "se palmeiras": "Palmeiras",
+    "santos fc": "Santos",
+    "sao paulo fc": "São Paulo",
 }
 
 

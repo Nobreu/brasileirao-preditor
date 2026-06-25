@@ -96,6 +96,13 @@ def simular_temporada(semente: int = SEMENTE) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 def coletar_api() -> pd.DataFrame | None:
     """Tenta baixar partidas reais. Devolve None se não der certo."""
+    # carrega variáveis do .env (se existir) sem sobrescrever o ambiente
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(override=False)
+    except ImportError:
+        pass
     chave = os.environ.get("FOOTBALL_DATA_API_KEY")
     if not chave:
         return None
