@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+data/raw/*.csv
+data/processed/*.csv
+models/*.pkl
+.ipynb_checkpoints/
+.DS_Store
+# Documento-roteiro do professor — não vai pro GitHub
+PROJETO_BRASILEIRAO_PREDITOR.md
+
+# Configurações locais do editor/ferramentas
+.claude/
