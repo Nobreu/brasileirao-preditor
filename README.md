@@ -59,8 +59,14 @@ python tests/test_dados.py      # ou: python -m pytest -q
 ```
 
 ## Roadmap
-- **Fase 1 — Dashboard** ✅ (você está aqui)
-- Fase 2 — Feature engineering e EDA
+- **Fase 1 — Dashboard** ✅
+- **Fase 2 — Feature engineering e EDA** ✅ (você está aqui)
 - Fase 3 — Modelo preditivo
 - Fase 4 — API com FastAPI
 - Fase 5 — Camada de contexto + deploy
+
+### Fase 2 — o que foi adicionado
+- `src/features/build_features.py` — gera `dataset_modelagem.csv` (1 linha/partida, 18 features), **sem data leak**
+- Nova aba **"Análise de Times"** no dashboard (features, comparação, scatter casa×fora, heatmap de correlação)
+- `notebooks/02-features.ipynb` — EDA (heatmap, boxplot, scatter)
+- `tests/test_features.py` — inclui teste automático de data leak
