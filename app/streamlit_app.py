@@ -34,6 +34,7 @@ from src.features.simulador import (  # noqa: E402
     narrar,
     projetar_temporada,
     simular_partida,
+    tabela_projetada,
 )
 
 st.set_page_config(page_title="Brasileirão Preditor", page_icon="⚽", layout="wide")
@@ -68,6 +69,13 @@ def carregar_projecao(n_sims: int):
     partidas = pd.read_csv(PARTIDAS_PROC)
     futuros = pd.read_csv(JOGOS_FUTUROS_PROC)
     return projetar_temporada(partidas, futuros, n_sims=n_sims)
+
+
+@st.cache_data
+def carregar_cenario():
+    partidas = pd.read_csv(PARTIDAS_PROC)
+    futuros = pd.read_csv(JOGOS_FUTUROS_PROC)
+    return tabela_projetada(partidas, futuros)
 
 
 def badge_sequencia(seq: str) -> str:
@@ -374,3 +382,60 @@ with aba_proj:
             fig_r.update_traces(marker_color="#c62828")
             fig_r.update_layout(xaxis_tickformat=".0%")
             st.plotly_chart(fig_r, width="stretch")
+
+        st.divider()
+        # ---- Cenário mais provável: tabela final montada com todos os jogos ----
+        tabela_final, palpites = carregar_cenario()
+
+        st.subheader("📋 Tabela final no cenário mais provável")
+        st.caption(
+            "Diferente da simulação acima (que é uma média de milhares de cenários), "
+            "aqui montamos **um** cenário: cada jogo que falta termina no seu placar "
+            "mais provável. Somando ao que já aconteceu, esta seria a classificação final."
+        )
+        # marca as zonas (G4 / Z4) para leitura rápida
+        n_times = len(tabela_final)
+
+        def _zona(pos: int) -> str:
+            if pos <= 4:
+                return "🟢 G4"
+            if pos >= n_times - 3:
+                return "🔴 Z4"
+            return ""
+
+        tf = tabela_final.copy()
+        tf["zona"] = tf["posicao"].map(_zona)
+        tf = tf.rename(columns={
+            "posicao": "#", "time": "Time", "P": "P", "J": "J", "V": "V",
+            "E": "E", "D": "D", "GP": "GP", "GC": "GC", "SG": "SG", "zona": "",
+        })
+        st.dataframe(
+            tf[["#", "Time", "P", "J", "V", "E", "D", "GP", "GC", "SG", ""]],
+            width="stretch", hide_index=True, height=740,
+        )
+
+        st.subheader("🔮 Palpite jogo a jogo")
+        st.caption(
+            "O placar mais provável e as probabilidades de cada jogo que ainda falta. "
+            "**Placar provável** é o placar exato mais provável; **Tendência** é o "
+            "resultado (1/X/2) mais provável — podem divergir (ex.: 1×1, mas o "
+            "mandante ainda é o favorito somando todos os placares)."
+        )
+        times_fut = sorted(set(palpites["time_casa"]) | set(palpites["time_fora"]))
+        filtro = st.selectbox("Filtrar por time", ["(todos)"] + times_fut, key="filtro_fut")
+        pv = palpites if filtro == "(todos)" else palpites[
+            (palpites["time_casa"] == filtro) | (palpites["time_fora"] == filtro)
+        ]
+        pv = pv.copy()
+        for c in ("prob_casa", "prob_empate", "prob_fora"):
+            pv[c] = (pv[c] * 100).round(0).astype(int)
+        pv = pv.rename(columns={
+            "rodada": "Rod.", "time_casa": "Mandante", "time_fora": "Visitante",
+            "placar_provavel": "Placar provável", "prob_casa": "Casa %",
+            "prob_empate": "Empate %", "prob_fora": "Fora %", "tendencia": "Tendência",
+        })
+        st.dataframe(
+            pv[["Rod.", "Mandante", "Visitante", "Placar provável",
+                "Casa %", "Empate %", "Fora %", "Tendência"]],
+            width="stretch", hide_index=True, height=520,
+        )

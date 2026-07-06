@@ -256,3 +256,62 @@ def projetar_temporada(partidas: pd.DataFrame, jogos_futuros: pd.DataFrame,
     return resumo.sort_values(
         ["prob_titulo", "pontos_proj_medio"], ascending=False
     ).reset_index(drop=True)
+
+
+# --------------------------------------------------------------------------- #
+# 6. Cenário mais provável — palpite jogo a jogo e tabela final montada
+# --------------------------------------------------------------------------- #
+def prever_jogos_futuros(partidas: pd.DataFrame, jogos_futuros: pd.DataFrame,
+                         forcas: Forcas | None = None) -> pd.DataFrame:
+    """Para cada jogo futuro, o placar mais provável + probabilidades 1/X/2.
+
+    É o palpite jogo a jogo (um cenário, o mais provável de cada partida).
+    """
+    if jogos_futuros is None or jogos_futuros.empty:
+        return pd.DataFrame()
+    forcas = forcas or forcas_times(partidas)
+    linhas = []
+    for _, j in jogos_futuros.iterrows():
+        casa, fora = j["time_casa"], j["time_fora"]
+        if casa not in forcas.ratings.index or fora not in forcas.ratings.index:
+            continue
+        r = simular_partida(partidas, casa, fora, forcas=forcas)
+        a, b = r["placar_mais_provavel"]
+        tendencia = max(
+            (("Casa", r["prob_casa"]), ("Empate", r["prob_empate"]), ("Fora", r["prob_fora"])),
+            key=lambda x: x[1],
+        )[0]
+        linhas.append({
+            "rodada": int(j["rodada"]) if pd.notna(j.get("rodada")) else None,
+            "data": j.get("data"),
+            "time_casa": casa,
+            "time_fora": fora,
+            "gols_casa": a,
+            "gols_fora": b,
+            "placar_provavel": f"{a} x {b}",
+            "prob_casa": r["prob_casa"],
+            "prob_empate": r["prob_empate"],
+            "prob_fora": r["prob_fora"],
+            "tendencia": tendencia,
+        })
+    return pd.DataFrame(linhas)
+
+
+def tabela_projetada(partidas: pd.DataFrame, jogos_futuros: pd.DataFrame,
+                     forcas: Forcas | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Monta a tabela final assumindo o placar mais provável de cada jogo restante.
+
+    Devolve `(tabela_final, palpites_por_jogo)`. A tabela final considera TODOS
+    os jogos (finalizados + os futuros no cenário mais provável).
+    """
+    forcas = forcas or forcas_times(partidas)
+    palpites = prever_jogos_futuros(partidas, jogos_futuros, forcas=forcas)
+
+    cols = ["rodada", "time_casa", "time_fora", "gols_casa", "gols_fora"]
+    reais = partidas[cols]
+    if palpites.empty:
+        combinado = reais
+    else:
+        combinado = pd.concat([reais, palpites[cols]], ignore_index=True)
+    tabela_final = derivar_tabela(combinado)
+    return tabela_final, palpites

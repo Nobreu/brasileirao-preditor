@@ -14,9 +14,11 @@ from src.features.simulador import (
     gols_esperados,
     matriz_placares,
     monte_carlo_partida,
+    prever_jogos_futuros,
     probabilidades,
     projetar_temporada,
     simular_partida,
+    tabela_projetada,
 )
 
 # dados simulados (determinísticos) — não dependem de internet
@@ -84,6 +86,41 @@ def test_projecao_invariantes():
 def test_projecao_vazia_sem_futuros():
     vazio = pd.DataFrame(columns=["rodada", "data", "time_casa", "time_fora"])
     assert projetar_temporada(PARTIDAS, vazio, n_sims=100).empty
+
+
+def _futuros_ficticios():
+    return pd.DataFrame(
+        [
+            {"rodada": 99, "data": "2024-12-01", "time_casa": TIMES[i], "time_fora": TIMES[-1 - i]}
+            for i in range(10)
+        ]
+    )
+
+
+def test_prever_jogos_futuros():
+    palp = prever_jogos_futuros(PARTIDAS, _futuros_ficticios(), forcas=FORCAS)
+    assert len(palp) == 10
+    # probabilidades de cada jogo somam ~1
+    somas = palp["prob_casa"] + palp["prob_empate"] + palp["prob_fora"]
+    assert (somas.sub(1.0).abs() < 1e-9).all()
+    assert palp["tendencia"].isin(["Casa", "Empate", "Fora"]).all()
+
+
+def test_tabela_projetada_soma_pontos():
+    futuros = _futuros_ficticios()
+    tab, palp = tabela_projetada(PARTIDAS, futuros, forcas=FORCAS)
+    assert len(tab) == 20
+    # projetar só ADICIONA jogos -> pontos finais >= pontos atuais
+    atual = derivar_tabela_local()
+    for t in TIMES:
+        p_final = tab.set_index("time").at[t, "P"]
+        p_atual = atual.set_index("time").at[t, "P"]
+        assert p_final >= p_atual, f"{t}: projetado {p_final} < atual {p_atual}"
+
+
+def derivar_tabela_local():
+    from src.data.coletar_tabela import derivar_tabela
+    return derivar_tabela(PARTIDAS)
 
 
 if __name__ == "__main__":
