@@ -20,6 +20,8 @@ PARTIDAS_PROC = PROCESSED / "partidas.csv"
 TABELA_PROC = PROCESSED / "tabela.csv"
 FORMA_PROC = PROCESSED / "forma_recente.csv"
 DATASET_MODELAGEM = PROCESSED / "dataset_modelagem.csv"  # Fase 2: uma linha por partida com features
+JOGOS_FUTUROS_RAW = RAW / "jogos_futuros.csv"            # Fase 2+: partidas ainda não disputadas
+JOGOS_FUTUROS_PROC = PROCESSED / "jogos_futuros.csv"
 
 
 def garantir_pastas() -> None:

@@ -19,7 +19,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from .paths import PARTIDAS_RAW, TABELA_RAW, garantir_pastas
+from .paths import JOGOS_FUTUROS_RAW, PARTIDAS_RAW, TABELA_RAW, garantir_pastas
 from .times import FORCA, TIMES_SERIE_A, normalizar_nome
 
 SEMENTE = 42
@@ -94,8 +94,14 @@ def simular_temporada(semente: int = SEMENTE) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 # 3. (Opcional) Coleta real via football-data.org
 # --------------------------------------------------------------------------- #
-def coletar_api() -> pd.DataFrame | None:
-    """Tenta baixar partidas reais. Devolve None se não der certo."""
+def coletar_api() -> tuple[pd.DataFrame, pd.DataFrame] | None:
+    """Tenta baixar partidas reais.
+
+    Devolve `(finalizadas, futuras)`:
+    - finalizadas: jogos com placar (para tabela/forma/features/força).
+    - futuras: jogos ainda não disputados (para a projeção de temporada).
+    Devolve None se não houver chave ou a chamada falhar.
+    """
     # carrega variáveis do .env (se existir) sem sobrescrever o ambiente
     try:
         from dotenv import load_dotenv
@@ -113,24 +119,24 @@ def coletar_api() -> pd.DataFrame | None:
         resp = requests.get(url, headers={"X-Auth-Token": chave}, timeout=15)
         resp.raise_for_status()
         dados = resp.json()
-        linhas = []
+        finalizadas, futuras = [], []
         for m in dados.get("matches", []):
-            if m.get("status") != "FINISHED":
-                continue
-            placar = m["score"]["fullTime"]
-            linhas.append(
-                {
-                    "rodada": m.get("matchday"),
-                    "data": m["utcDate"][:10],
-                    "time_casa": m["homeTeam"]["name"],
-                    "time_fora": m["awayTeam"]["name"],
-                    "gols_casa": placar["home"],
-                    "gols_fora": placar["away"],
-                }
-            )
-        if not linhas:
+            base = {
+                "rodada": m.get("matchday"),
+                "data": m["utcDate"][:10],
+                "time_casa": m["homeTeam"]["name"],
+                "time_fora": m["awayTeam"]["name"],
+            }
+            if m.get("status") == "FINISHED":
+                placar = m["score"]["fullTime"]
+                finalizadas.append(
+                    {**base, "gols_casa": placar["home"], "gols_fora": placar["away"]}
+                )
+            elif m.get("status") in ("SCHEDULED", "TIMED"):
+                futuras.append(base)
+        if not finalizadas:
             return None
-        return pd.DataFrame(linhas)
+        return pd.DataFrame(finalizadas), pd.DataFrame(futuras)
     except Exception as exc:  # rede instável, limite de API, etc.
         print(f"[coletar_api] Falhou, usando simulação. Motivo: {exc}")
         return None
@@ -183,23 +189,32 @@ def derivar_tabela(partidas: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 def main() -> None:
     garantir_pastas()
-    partidas = coletar_api()
+    resultado = coletar_api()
     origem = "API football-data.org"
-    if partidas is None:
+    if resultado is None:
         partidas = simular_temporada()
+        # simulação gera a temporada completa: não há jogos futuros
+        futuras = pd.DataFrame(columns=["rodada", "data", "time_casa", "time_fora"])
         origem = "simulação determinística"
+    else:
+        partidas, futuras = resultado
 
     # padroniza nomes já na coleta (a limpeza reforça isso depois)
     partidas["time_casa"] = partidas["time_casa"].map(normalizar_nome)
     partidas["time_fora"] = partidas["time_fora"].map(normalizar_nome)
+    if not futuras.empty:
+        futuras["time_casa"] = futuras["time_casa"].map(normalizar_nome)
+        futuras["time_fora"] = futuras["time_fora"].map(normalizar_nome)
 
     tabela = derivar_tabela(partidas)
 
     partidas.to_csv(PARTIDAS_RAW, index=False, encoding="utf-8")
     tabela.to_csv(TABELA_RAW, index=False, encoding="utf-8")
+    futuras.to_csv(JOGOS_FUTUROS_RAW, index=False, encoding="utf-8")
     print(f"[coletar_tabela] Fonte: {origem}")
     print(f"[coletar_tabela] {len(partidas)} partidas -> {PARTIDAS_RAW}")
     print(f"[coletar_tabela] {len(tabela)} times    -> {TABELA_RAW}")
+    print(f"[coletar_tabela] {len(futuras)} jogos futuros -> {JOGOS_FUTUROS_RAW}")
 
 
 if __name__ == "__main__":

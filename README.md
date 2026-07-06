@@ -70,3 +70,10 @@ python tests/test_dados.py      # ou: python -m pytest -q
 - Nova aba **"Análise de Times"** no dashboard (features, comparação, scatter casa×fora, heatmap de correlação)
 - `notebooks/02-features.ipynb` — EDA (heatmap, boxplot, scatter)
 - `tests/test_features.py` — inclui teste automático de data leak
+
+### Fase 2+ — Simulador (modelo de Poisson)
+- `src/features/simulador.py` — simulador de partidas e projeção de temporada
+- Aba **"🎲 Simulador"**: probabilidades de resultado, placar mais provável, gols esperados, BTTS/Over 2.5, heatmap de placares, narração automática e Monte Carlo (10k)
+- Aba **"🏆 Projeção"**: Monte Carlo do resto do campeonato → chance de título / G4 / rebaixamento (usa os jogos futuros da API)
+- `tests/test_simulador.py` — somas de probabilidade e invariantes da projeção
+- Detalhes em [`docs/aula2-simulador.md`](docs/aula2-simulador.md)

@@ -22,11 +22,19 @@ if str(RAIZ) not in sys.path:
 from src.data.paths import (  # noqa: E402
     DATASET_MODELAGEM,
     FORMA_PROC,
+    JOGOS_FUTUROS_PROC,
     PARTIDAS_PROC,
     TABELA_PROC,
 )
 from src.data import preparar_dados  # noqa: E402
 from src.features.build_features import resumo_times  # noqa: E402
+from src.features.simulador import (  # noqa: E402
+    forcas_times,
+    monte_carlo_partida,
+    narrar,
+    projetar_temporada,
+    simular_partida,
+)
 
 st.set_page_config(page_title="Brasileirão Preditor", page_icon="⚽", layout="wide")
 
@@ -47,7 +55,19 @@ def carregar_dados():
     partidas = pd.read_csv(PARTIDAS_PROC)
     dataset = pd.read_csv(DATASET_MODELAGEM)
     resumo = resumo_times(partidas)
-    return tabela, forma, partidas, dataset, resumo
+    if JOGOS_FUTUROS_PROC.exists():
+        jogos_futuros = pd.read_csv(JOGOS_FUTUROS_PROC)
+    else:
+        jogos_futuros = pd.DataFrame(columns=["rodada", "data", "time_casa", "time_fora"])
+    forcas = forcas_times(partidas)
+    return tabela, forma, partidas, dataset, resumo, jogos_futuros, forcas
+
+
+@st.cache_data
+def carregar_projecao(n_sims: int):
+    partidas = pd.read_csv(PARTIDAS_PROC)
+    futuros = pd.read_csv(JOGOS_FUTUROS_PROC)
+    return projetar_temporada(partidas, futuros, n_sims=n_sims)
 
 
 def badge_sequencia(seq: str) -> str:
@@ -66,7 +86,7 @@ def badge_sequencia(seq: str) -> str:
 # --------------------------------------------------------------------------- #
 # Dados + cabeçalho
 # --------------------------------------------------------------------------- #
-tabela, forma, partidas, dataset, resumo = carregar_dados()
+tabela, forma, partidas, dataset, resumo, jogos_futuros, forcas = carregar_dados()
 
 st.title("⚽ Brasileirão — Painel de Dados")
 st.caption("Fases 1 e 2 · Fonte: API football-data.org (se configurada) ou simulação.")
@@ -80,7 +100,9 @@ col4.metric(
     int(partidas["gols_casa"].sum() + partidas["gols_fora"].sum()),
 )
 
-aba_tabela, aba_analise = st.tabs(["📊 Classificação & Forma", "🔬 Análise de Times"])
+aba_tabela, aba_analise, aba_sim, aba_proj = st.tabs(
+    ["📊 Classificação & Forma", "🔬 Análise de Times", "🎲 Simulador", "🏆 Projeção"]
+)
 
 # =========================================================================== #
 # ABA 1 — Classificação e forma recente (Fase 1)
@@ -223,3 +245,132 @@ with aba_analise:
         color_continuous_scale="RdBu_r", zmin=-1, zmax=1, height=700,
     )
     st.plotly_chart(fig_hm, width="stretch")
+
+# =========================================================================== #
+# ABA 3 — Simulador de partida (modelo de Poisson)
+# =========================================================================== #
+with aba_sim:
+    st.subheader("🎲 Simulador de partida")
+    st.caption(
+        "Modelo de Poisson: estima o resultado de um confronto a partir dos gols "
+        "reais marcados/sofridos por cada time (com mando de campo)."
+    )
+    lista = sorted(tabela["time"].tolist())
+    c1, c2 = st.columns(2)
+    casa = c1.selectbox("🏠 Mandante", lista, index=0, key="sim_casa")
+    fora = c2.selectbox("✈️ Visitante", lista, index=1, key="sim_fora")
+
+    if casa == fora:
+        st.warning("Escolha dois times diferentes.")
+    else:
+        res = simular_partida(partidas, casa, fora, forcas=forcas)
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric(f"Vitória {casa}", f"{res['prob_casa']:.0%}")
+        m2.metric("Empate", f"{res['prob_empate']:.0%}")
+        m3.metric(f"Vitória {fora}", f"{res['prob_fora']:.0%}")
+
+        a, b = res["placar_mais_provavel"]
+        g1, g2, g3, g4 = st.columns(4)
+        g1.metric("Gols esperados", f"{res['lam_casa']:.1f} x {res['lam_fora']:.1f}")
+        g2.metric("Placar provável", f"{a} x {b}")
+        g3.metric("Ambos marcam", f"{res['btts']:.0%}")
+        g4.metric("Mais de 2,5 gols", f"{res['over25']:.0%}")
+
+        st.info(narrar(res))
+
+        col_hm, col_top = st.columns([2, 1])
+        with col_hm:
+            st.markdown("**Distribuição de placares** (% de probabilidade)")
+            faixa = list(range(res["matriz"].shape[0]))
+            fig_pl = px.imshow(
+                res["matriz"] * 100,
+                x=faixa, y=faixa, text_auto=".1f",
+                labels={"x": f"Gols {fora}", "y": f"Gols {casa}", "color": "%"},
+                color_continuous_scale="Blues", aspect="auto", height=430,
+            )
+            st.plotly_chart(fig_pl, width="stretch")
+        with col_top:
+            st.markdown("**Placares mais prováveis**")
+            for (i, j), prob in res["top5_placares"]:
+                st.markdown(f"- **{i} x {j}** — {prob:.1%}")
+
+        with st.expander("🎰 Rodar 10.000 simulações (Monte Carlo)"):
+            mc = monte_carlo_partida(res["lam_casa"], res["lam_fora"], n=10000)
+            d1, d2, d3 = st.columns(3)
+            d1.metric(f"Vitória {casa}", f"{mc['freq_casa']:.1%}")
+            d2.metric("Empate", f"{mc['freq_empate']:.1%}")
+            d3.metric(f"Vitória {fora}", f"{mc['freq_fora']:.1%}")
+            st.caption(
+                "As frequências das 10 mil simulações confirmam as probabilidades "
+                "do cálculo analítico acima."
+            )
+            fig_h = px.histogram(
+                x=mc["total_gols"],
+                labels={"x": "Total de gols na partida"},
+                nbins=int(mc["total_gols"].max()) + 1, height=320,
+            )
+            fig_h.update_traces(marker_color="#1565c0")
+            st.plotly_chart(fig_h, width="stretch")
+
+# =========================================================================== #
+# ABA 4 — Projeção da temporada (Monte Carlo do resto do campeonato)
+# =========================================================================== #
+with aba_proj:
+    st.subheader("🏆 Projeção da temporada")
+    if jogos_futuros.empty:
+        st.info(
+            "Não há jogos futuros nesta base — a temporada está completa ou os "
+            "dados vêm da simulação offline. A projeção precisa de partidas ainda "
+            "não disputadas."
+        )
+        st.caption(
+            "Configure o token da API (.env) e rode `python -m src.data.preparar_dados` "
+            "durante a temporada para habilitar esta aba."
+        )
+    else:
+        st.caption(
+            f"{len(jogos_futuros)} jogos restantes · simulamos o resto do campeonato "
+            "milhares de vezes para estimar as chances de cada time."
+        )
+        n_sims = st.select_slider(
+            "Número de simulações", options=[1000, 5000, 10000], value=5000
+        )
+        with st.spinner("Rodando simulações..."):
+            proj = carregar_projecao(n_sims)
+
+        disp = proj.copy()
+        for c in ("prob_titulo", "prob_g4", "prob_rebaixamento"):
+            disp[c] = (disp[c] * 100).round(1)
+        disp = disp.rename(
+            columns={
+                "time": "Time", "pontos_atuais": "Pts atuais",
+                "pontos_proj_medio": "Pts projetados", "posicao_media": "Pos. média",
+                "prob_titulo": "Título %", "prob_g4": "G4 %",
+                "prob_rebaixamento": "Rebaix. %",
+            }
+        )
+        st.dataframe(disp, width="stretch", hide_index=True)
+
+        cA, cB = st.columns(2)
+        with cA:
+            st.markdown("**🥇 Chance de título**")
+            top = proj[proj["prob_titulo"] > 0].head(8).sort_values("prob_titulo")
+            fig_t = px.bar(
+                top, x="prob_titulo", y="time", orientation="h",
+                labels={"prob_titulo": "", "time": ""},
+            )
+            fig_t.update_traces(marker_color="#2e7d32")
+            fig_t.update_layout(xaxis_tickformat=".0%")
+            st.plotly_chart(fig_t, width="stretch")
+        with cB:
+            st.markdown("**🔻 Risco de rebaixamento**")
+            riz = proj.sort_values("prob_rebaixamento", ascending=False).head(8)
+            riz = riz.sort_values("prob_rebaixamento")
+            fig_r = px.bar(
+                riz, x="prob_rebaixamento", y="time", orientation="h",
+                labels={"prob_rebaixamento": "", "time": ""},
+            )
+            fig_r.update_traces(marker_color="#c62828")
+            fig_r.update_layout(xaxis_tickformat=".0%")
+            st.plotly_chart(fig_r, width="stretch")

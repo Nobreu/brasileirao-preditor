@@ -8,6 +8,8 @@ from __future__ import annotations
 import pandas as pd
 
 from .paths import (
+    JOGOS_FUTUROS_PROC,
+    JOGOS_FUTUROS_RAW,
     PARTIDAS_PROC,
     PARTIDAS_RAW,
     TABELA_PROC,
@@ -43,6 +45,19 @@ def limpar_partidas(df: pd.DataFrame) -> pd.DataFrame:
     return df.sort_values(["rodada", "data"]).reset_index(drop=True)
 
 
+def limpar_jogos_futuros(df: pd.DataFrame) -> pd.DataFrame:
+    """Padroniza jogos ainda não disputados (sem placar)."""
+    df = df.copy()
+    if df.empty:
+        return df
+    df["time_casa"] = df["time_casa"].map(normalizar_nome)
+    df["time_fora"] = df["time_fora"].map(normalizar_nome)
+    df["data"] = pd.to_datetime(df["data"], errors="coerce")
+    df["rodada"] = pd.to_numeric(df["rodada"], errors="coerce")
+    df = df.dropna(subset=["time_casa", "time_fora"])
+    return df.sort_values(["rodada", "data"]).reset_index(drop=True)
+
+
 def main() -> None:
     garantir_pastas()
     brutas = pd.read_csv(PARTIDAS_RAW)
@@ -53,6 +68,13 @@ def main() -> None:
     tabela.to_csv(TABELA_PROC, index=False, encoding="utf-8")
     print(f"[limpar] {len(partidas)} partidas -> {PARTIDAS_PROC}")
     print(f"[limpar] {len(tabela)} times    -> {TABELA_PROC}")
+
+    # jogos futuros (podem não existir no modo simulação)
+    if JOGOS_FUTUROS_RAW.exists():
+        futuros_brutos = pd.read_csv(JOGOS_FUTUROS_RAW)
+        futuros = limpar_jogos_futuros(futuros_brutos)
+        futuros.to_csv(JOGOS_FUTUROS_PROC, index=False, encoding="utf-8")
+        print(f"[limpar] {len(futuros)} jogos futuros -> {JOGOS_FUTUROS_PROC}")
 
 
 if __name__ == "__main__":
