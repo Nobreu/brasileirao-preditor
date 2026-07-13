@@ -203,6 +203,67 @@ def resumo_times(partidas: pd.DataFrame, janela: int = JANELA) -> pd.DataFrame:
     return pd.DataFrame(linhas).sort_values("saldo_temporada", ascending=False).reset_index(drop=True)
 
 
+# Colunas de feature do dataset (fonte única da verdade para treino e previsão)
+FEATURES = [
+    "casa_forma5", "casa_aprov_mando", "casa_media_gols_pro5", "casa_media_gols_sofr5",
+    "casa_saldo_temporada", "casa_sem_derrota", "casa_sem_vitoria",
+    "fora_forma5", "fora_aprov_mando", "fora_media_gols_pro5", "fora_media_gols_sofr5",
+    "fora_saldo_temporada", "fora_sem_derrota", "fora_sem_vitoria",
+    "diff_forma5", "diff_saldo", "diff_aprov_mando", "h2h_saldo_casa",
+]
+
+
+def montar_features_atual(partidas: pd.DataFrame, casa: str, fora: str) -> dict | None:
+    """Monta as features de um confronto HIPOTÉTICO com o estado ATUAL dos times.
+
+    Usa TODO o histórico de cada time (não há partida futura para vazar), gerando
+    exatamente as mesmas colunas que `construir_dataset` — garantindo que o modelo
+    receba na previsão o mesmo formato que viu no treino. Devolve None se algum
+    dos times não tiver histórico.
+    """
+    df = partidas.copy()
+    df["data"] = pd.to_datetime(df["data"], errors="coerce")
+    df = df.sort_values(["rodada", "data"]).reset_index(drop=True)
+
+    hist: dict[str, list[dict]] = {}
+    h2h: dict[frozenset, list[str]] = {}
+    for _, jogo in df.iterrows():
+        c, f = jogo["time_casa"], jogo["time_fora"]
+        gc, gf = int(jogo["gols_casa"]), int(jogo["gols_fora"])
+        _registrar(hist, c, gc, gf, casa=True)
+        _registrar(hist, f, gf, gc, casa=False)
+        vencedor = c if gc > gf else (f if gc < gf else "Empate")
+        h2h.setdefault(frozenset((c, f)), []).append(vencedor)
+
+    h_casa, h_fora = hist.get(casa), hist.get(fora)
+    if not h_casa or not h_fora:
+        return None
+
+    fc = _features_time(h_casa, "casa")
+    ff = _features_time(h_fora, "fora")
+    anteriores = h2h.get(frozenset((casa, fora)), [])
+    return {
+        "casa_forma5": fc["forma5"],
+        "casa_aprov_mando": fc["aprov_mando"],
+        "casa_media_gols_pro5": fc["media_gols_pro5"],
+        "casa_media_gols_sofr5": fc["media_gols_sofr5"],
+        "casa_saldo_temporada": fc["saldo_temporada"],
+        "casa_sem_derrota": fc["sem_derrota"],
+        "casa_sem_vitoria": fc["sem_vitoria"],
+        "fora_forma5": ff["forma5"],
+        "fora_aprov_mando": ff["aprov_mando"],
+        "fora_media_gols_pro5": ff["media_gols_pro5"],
+        "fora_media_gols_sofr5": ff["media_gols_sofr5"],
+        "fora_saldo_temporada": ff["saldo_temporada"],
+        "fora_sem_derrota": ff["sem_derrota"],
+        "fora_sem_vitoria": ff["sem_vitoria"],
+        "diff_forma5": fc["forma5"] - ff["forma5"],
+        "diff_saldo": fc["saldo_temporada"] - ff["saldo_temporada"],
+        "diff_aprov_mando": round(fc["aprov_mando"] - ff["aprov_mando"], 3),
+        "h2h_saldo_casa": anteriores.count(casa) - anteriores.count(fora),
+    }
+
+
 def main() -> None:
     garantir_pastas()
     partidas = pd.read_csv(PARTIDAS_PROC)

@@ -60,10 +60,17 @@ python tests/test_dados.py      # ou: python -m pytest -q
 
 ## Roadmap
 - **Fase 1 — Dashboard** ✅
-- **Fase 2 — Feature engineering e EDA** ✅ (você está aqui)
-- Fase 3 — Modelo preditivo
+- **Fase 2 — Feature engineering e EDA** ✅
+- **Fase 3 — Modelo preditivo** ✅ (você está aqui)
 - Fase 4 — API com FastAPI
 - Fase 5 — Camada de contexto + deploy
+
+### Fase 3 — o que foi adicionado
+- `src/models/treinar.py` — split temporal, baseline, Regressão Logística + Random Forest, métricas (acurácia, log loss, matriz de confusão), salva `models/modelo_v1.pkl`
+- `src/models/predizer.py` — `prever_partida()` usando o estado atual dos times
+- Aba **"🧠 Previsão (ML)"**: probabilidades do modelo, comparação ML × Poisson, desempenho, matriz de confusão e importância das features
+- `tests/test_modelo.py`, `notebooks/03-modelo.ipynb`, [`docs/aula3-explicacao-professor.md`](docs/aula3-explicacao-professor.md)
+- Treinar: `python -m src.models.treinar`
 
 ### Fase 2 — o que foi adicionado
 - `src/features/build_features.py` — gera `dataset_modelagem.csv` (1 linha/partida, 18 features), **sem data leak**

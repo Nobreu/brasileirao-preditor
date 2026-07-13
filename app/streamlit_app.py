@@ -36,6 +36,7 @@ from src.features.simulador import (  # noqa: E402
     simular_partida,
     tabela_projetada,
 )
+from src.models.predizer import carregar_modelo, prever_partida  # noqa: E402
 
 st.set_page_config(page_title="Brasileirão Preditor", page_icon="⚽", layout="wide")
 
@@ -78,6 +79,11 @@ def carregar_cenario():
     return tabela_projetada(partidas, futuros)
 
 
+@st.cache_resource
+def carregar_modelo_ml():
+    return carregar_modelo()
+
+
 def badge_sequencia(seq: str) -> str:
     """Monta os quadradinhos coloridos V/E/D em HTML."""
     bolinhas = []
@@ -108,8 +114,9 @@ col4.metric(
     int(partidas["gols_casa"].sum() + partidas["gols_fora"].sum()),
 )
 
-aba_tabela, aba_analise, aba_sim, aba_proj = st.tabs(
-    ["📊 Classificação & Forma", "🔬 Análise de Times", "🎲 Simulador", "🏆 Projeção"]
+aba_tabela, aba_analise, aba_sim, aba_proj, aba_prev = st.tabs(
+    ["📊 Classificação & Forma", "🔬 Análise de Times", "🎲 Simulador",
+     "🏆 Projeção", "🧠 Previsão (ML)"]
 )
 
 # =========================================================================== #
@@ -439,3 +446,91 @@ with aba_proj:
                 "Casa %", "Empate %", "Fora %", "Tendência"]],
             width="stretch", hide_index=True, height=520,
         )
+
+# =========================================================================== #
+# ABA 5 — Previsão com Machine Learning (Fase 3)
+# =========================================================================== #
+with aba_prev:
+    st.subheader("🧠 Previsão com Machine Learning")
+    pac = carregar_modelo_ml()
+    st.caption(
+        f"Modelo escolhido: **{pac['nome_modelo']}** · treinado nas rodadas até "
+        f"{pac['rodada_corte'] - 1} e testado nas seguintes (split temporal, sem embaralhar)."
+    )
+
+    lista = sorted(tabela["time"].tolist())
+    c1, c2 = st.columns(2)
+    casa = c1.selectbox("🏠 Mandante", lista, index=0, key="prev_casa")
+    fora = c2.selectbox("✈️ Visitante", lista, index=1, key="prev_fora")
+
+    if casa == fora:
+        st.warning("Escolha dois times diferentes.")
+    else:
+        ml = prever_partida(casa, fora, partidas=partidas, pacote=pac)
+        if ml is None:
+            st.warning("Um dos times ainda não tem histórico suficiente.")
+        else:
+            m1, m2, m3 = st.columns(3)
+            m1.metric(f"Vitória {casa}", f"{ml['prob_casa']:.0%}")
+            m2.metric("Empate", f"{ml['prob_empate']:.0%}")
+            m3.metric(f"Vitória {fora}", f"{ml['prob_fora']:.0%}")
+            st.success(f"Palpite do modelo: **{ml['palpite']}**")
+
+            # comparação com o simulador estatístico (Poisson) da Fase 2
+            po = simular_partida(partidas, casa, fora, forcas=forcas)
+            comp = pd.DataFrame({
+                "Método": ["🧠 Modelo (ML)", "🎲 Poisson (estatístico)"],
+                "Casa": [ml["prob_casa"], po["prob_casa"]],
+                "Empate": [ml["prob_empate"], po["prob_empate"]],
+                "Fora": [ml["prob_fora"], po["prob_fora"]],
+            })
+            st.markdown("**Modelo (ML) vs Poisson (Fase 2)**")
+            st.dataframe(
+                comp.style.format({"Casa": "{:.0%}", "Empate": "{:.0%}", "Fora": "{:.0%}"}),
+                width="stretch", hide_index=True,
+            )
+            st.caption(
+                "Dois caminhos diferentes para a mesma pergunta: um **aprende** dos dados, "
+                "o outro é **estatístico**. Quando concordam, mais confiança na previsão."
+            )
+
+    st.divider()
+    st.subheader("📏 Desempenho do modelo")
+    melhor = pac["metricas"][pac["nome_modelo"]]
+    d1, d2, d3 = st.columns(3)
+    d1.metric("Acurácia (teste)", f"{melhor['acuracia']:.0%}",
+              f"{(melhor['acuracia'] - pac['baseline_acuracia']) * 100:+.0f} p.p. vs baseline")
+    d2.metric("Baseline ingênuo", f"{pac['baseline_acuracia']:.0%}", "mandante sempre vence")
+    d3.metric("Log loss", f"{melhor['log_loss']:.3f}", "menor é melhor")
+
+    # tabela comparativa dos dois modelos
+    tab_metr = pd.DataFrame({
+        "Modelo": list(pac["metricas"].keys()),
+        "Acurácia": [m["acuracia"] for m in pac["metricas"].values()],
+        "Log loss": [m["log_loss"] for m in pac["metricas"].values()],
+    })
+    st.dataframe(
+        tab_metr.style.format({"Acurácia": "{:.1%}", "Log loss": "{:.3f}"}),
+        width="stretch", hide_index=True,
+    )
+
+    col_cm, col_imp = st.columns(2)
+    with col_cm:
+        st.markdown("**Matriz de confusão** (teste)")
+        st.caption("Linhas = resultado real · colunas = previsto.")
+        classes = ["Casa", "Empate", "Fora"]
+        fig_cm = px.imshow(
+            pac["matriz_confusao"], x=classes, y=classes, text_auto=True,
+            labels={"x": "Previsto", "y": "Real", "color": "Jogos"},
+            color_continuous_scale="Blues", aspect="auto", height=380,
+        )
+        st.plotly_chart(fig_cm, width="stretch")
+    with col_imp:
+        st.markdown("**Importância das features** (Random Forest)")
+        imp = pac["importancias"].head(10).sort_values()
+        fig_imp = px.bar(
+            x=imp.values, y=imp.index, orientation="h",
+            labels={"x": "Importância", "y": ""}, height=380,
+        )
+        fig_imp.update_traces(marker_color="#6a1b9a")
+        st.plotly_chart(fig_imp, width="stretch")

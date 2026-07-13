@@ -22,6 +22,7 @@ FORMA_PROC = PROCESSED / "forma_recente.csv"
 DATASET_MODELAGEM = PROCESSED / "dataset_modelagem.csv"  # Fase 2: uma linha por partida com features
 JOGOS_FUTUROS_RAW = RAW / "jogos_futuros.csv"            # Fase 2+: partidas ainda não disputadas
 JOGOS_FUTUROS_PROC = PROCESSED / "jogos_futuros.csv"
+MODELO_V1 = MODELS / "modelo_v1.pkl"                     # Fase 3: modelo treinado (serializado)
 
 
 def garantir_pastas() -> None:
